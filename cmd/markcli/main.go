@@ -21,8 +21,40 @@ THE SOFTWARE.
 */
 package main
 
-import "github.com/def4alt/markd/internal/cli"
+import (
+	"context"
+	"database/sql"
+	"log"
+	"os"
+
+	_ "modernc.org/sqlite"
+
+	"github.com/def4alt/markd/internal/bookmark"
+	"github.com/def4alt/markd/internal/cli"
+	"github.com/def4alt/markd/internal/platform/clock"
+	"github.com/def4alt/markd/internal/platform/ids"
+	"github.com/def4alt/markd/internal/storage/sqlite"
+)
 
 func main() {
-	cli.Execute()
+	db, err := sql.Open("sqlite", "markd.db")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer db.Close()
+
+	if err := sqlite.Migrate(context.Background(), db); err != nil {
+		panic(err)
+	}
+
+	repo := sqlite.NewBookmarkRepository(db)
+	clock := clock.Real{}
+	idgen := ids.UUID{}
+
+	svc := bookmark.NewService(repo, clock, idgen)
+
+	root := cli.NewRootCmd(svc)
+	if err := root.Execute(); err != nil {
+		os.Exit(1)
+	}
 }
