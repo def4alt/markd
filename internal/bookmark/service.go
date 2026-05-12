@@ -54,3 +54,21 @@ func (svc *Service) Add(ctx context.Context, in AddInput) (*Bookmark, error) {
 
 	return b, nil
 }
+
+func (svc *Service) Get(ctx context.Context, id string) (*Bookmark, error) {
+	b, err := svc.repo.Get(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+
+	return b, nil
+}
+
+func (svc *Service) List(ctx context.Context) ([]Bookmark, error) {
+	b, err := svc.repo.List(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return b, nil
+}
