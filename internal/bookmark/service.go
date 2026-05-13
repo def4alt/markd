@@ -55,41 +55,10 @@ func (svc *Service) Add(ctx context.Context, in AddInput) (*Bookmark, error) {
 	return b, nil
 }
 
-type UpdateInput struct {
-	ID          string
-	URL         string
-	Title       string
-	Description string
-	Tags        []string
-}
-
 func (svc *Service) Update(ctx context.Context, in *UpdateInput) error {
 	now := svc.clock.Now()
 
-	updated, err := svc.repo.Get(ctx, in.ID)
-	if err != nil {
-		return err
-	}
-
-	updated.UpdatedAt = now
-
-	if in.URL != "" {
-		updated.URL = in.URL
-	}
-
-	if in.Description != "" {
-		updated.Description = in.Description
-	}
-
-	if in.Title != "" {
-		updated.Title = in.Title
-	}
-
-	if in.Tags != nil {
-		updated.Tags = in.Tags
-	}
-
-	if err := svc.repo.Update(ctx, updated); err != nil {
+	if err := svc.repo.Update(ctx, in, now); err != nil {
 		return err
 	}
 

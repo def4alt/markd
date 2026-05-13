@@ -16,7 +16,7 @@ func NewSearchCmd(bookmarkSvc *bookmark.Service) *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			b, err := bookmarkSvc.Search(cmd.Context(), args[0])
 			if err != nil {
-				return fmt.Errorf("tag bookmark: %w", err)
+				return fmt.Errorf("search bookmark: %w", err)
 			}
 
 			for _, bm := range b {

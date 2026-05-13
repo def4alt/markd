@@ -16,10 +16,10 @@ func NewDeleteCmd(bookmarkSvc *bookmark.Service) *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			err := bookmarkSvc.Delete(cmd.Context(), args[0])
 			if err != nil {
-				return fmt.Errorf("get bookmark: %w", err)
+				return fmt.Errorf("delete bookmark: %w", err)
 			}
 
-			fmt.Printf("Successfuly removed %s", args[0])
+			fmt.Printf("Successfully removed %s", args[0])
 
 			return nil
 		},

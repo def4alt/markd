@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/def4alt/markd/internal/bookmark"
 )
@@ -26,6 +27,7 @@ WHERE id = ?
 `
 
 	var b bookmark.Bookmark
+	var lastCheckedAt sql.NullTime
 
 	err := r.db.QueryRowContext(ctx, q, id).Scan(
 		&b.ID,
@@ -35,7 +37,7 @@ WHERE id = ?
 		&b.Status,
 		&b.CreatedAt,
 		&b.UpdatedAt,
-		&b.LastCheckedAt,
+		&lastCheckedAt,
 	)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -43,6 +45,10 @@ WHERE id = ?
 		}
 
 		return nil, fmt.Errorf("get bookmark %q: %w", id, err)
+	}
+
+	if lastCheckedAt.Valid {
+		b.LastCheckedAt = &lastCheckedAt.Time
 	}
 
 	tags, err := r.listTagsByBookmarkID(ctx, b.ID)
@@ -109,47 +115,93 @@ ORDER BY created_at DESC
 	return out, nil
 }
 
-func (r *BookmarkRepository) Update(ctx context.Context, b *bookmark.Bookmark) error {
-	const q = `
-UPDATE bookmarks
-SET url = ?, title = ?, description = ?, status = ?, updated_at = ?, last_checked_at = ?
-WHERE id = ?
-`
+func (r *BookmarkRepository) Update(ctx context.Context, in *bookmark.UpdateInput, now time.Time) error {
+	var sets []string
+	var args []any
 
+	if in.URL != nil {
+		sets = append(sets, "url = ?")
+		args = append(args, *in.URL)
+	}
+
+	if in.Title != nil {
+		sets = append(sets, "title = ?")
+		args = append(args, *in.Title)
+	}
+
+	if in.Description != nil {
+		sets = append(sets, "description = ?")
+		args = append(args, *in.Description)
+	}
+
+	if in.Status != nil {
+		sets = append(sets, "status = ?")
+		args = append(args, *in.Status)
+	}
+
+	if in.LastCheckedAt != nil {
+		sets = append(sets, "last_checked_at = ?")
+		args = append(args, *in.LastCheckedAt)
+	}
+
+	if len(sets) == 0 && in.Tags == nil {
+		return nil
+	}
+
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin update bookmark %q tx: %w", in.ID, err)
+	}
+	defer tx.Rollback()
+
+	if len(sets) > 0 {
+		sets = append(sets, "updated_at = ?")
+		args = append(args, now, in.ID)
+
+		q := fmt.Sprintf("UPDATE bookmarks SET %s WHERE id = ?", strings.Join(sets, ", "))
+
+		res, err := tx.ExecContext(ctx, q, args...)
+		if err != nil {
+			return fmt.Errorf("update bookmark %q: %w", in.ID, err)
+		}
+
+		if n, _ := res.RowsAffected(); n == 0 {
+			return fmt.Errorf("bookmark %q not found", in.ID)
+		}
+	}
+
+	if in.Tags != nil {
+		tx.ExecContext(ctx, `DELETE FROM bookmark_tags WHERE bookmark_id = ?`, in.ID)
+
+		for _, tag := range in.Tags {
+			tx.ExecContext(ctx, `INSERT INTO bookmark_tags (bookmark_id, tag) VALUES (?, ?)`, in.ID, tag)
+		}
+	}
+
+	return tx.Commit()
+}
+
+func (r *BookmarkRepository) Create(ctx context.Context, b *bookmark.Bookmark) error {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin update bookmark %q tx: %w", b.ID, err)
 	}
 	defer tx.Rollback()
 
-	res, err := r.db.ExecContext(
+	resp, err := tx.ExecContext(
 		ctx,
-		q,
-		b.URL,
-		b.Title,
-		b.Description,
-		b.Status,
-		b.UpdatedAt,
-		b.LastCheckedAt,
-		b.ID,
+		`INSERT INTO bookmarks (id, url, title, description, status, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		b.ID, b.URL, b.Title, b.Description, b.Status, b.CreatedAt, b.UpdatedAt,
 	)
 	if err != nil {
-		return fmt.Errorf("update bookmark %q: %w", b.ID, err)
+		return fmt.Errorf("insert bookmark %q: %w", b.ID, err)
 	}
-
-	const tagDeleteQ = `
-		DELETE FROM bookmark_tags
-		WHERE bookmark_id = ?
-	`
 
 	const tagInsertQ = `
 		INSERT INTO bookmark_tags (bookmark_id, tag)
 		VALUES (?, ?)
 	`
-
-	if _, err := tx.ExecContext(ctx, tagDeleteQ, b.ID); err != nil {
-		return fmt.Errorf("delete bookmark tags for %q: %w", b.ID, err)
-	}
 
 	for _, tag := range b.Tags {
 		if _, err := tx.ExecContext(ctx, tagInsertQ, b.ID, tag); err != nil {
@@ -158,27 +210,16 @@ WHERE id = ?
 	}
 
 	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("commit update bookmark %q: %w", b.ID, err)
+		return fmt.Errorf("commit create bookmark %q: %w", b.ID, err)
 	}
 
-	n, err := res.RowsAffected()
+	n, err := resp.RowsAffected()
 	if err != nil {
 		return fmt.Errorf("rows affected for bookmark %q: %w", b.ID, err)
 	}
 	if n == 0 {
-		return fmt.Errorf("bookmark %q not found", b.ID)
+		return fmt.Errorf("bookmark %q not created", b.ID)
 	}
-
-	return nil
-}
-
-func (r *BookmarkRepository) Create(ctx context.Context, b *bookmark.Bookmark) error {
-	_, err := r.db.ExecContext(
-		ctx,
-		`INSERT INTO bookmarks (id, url, title, description, status, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		b.ID, b.URL, b.Title, b.Description, b.Status, b.CreatedAt, b.UpdatedAt,
-	)
 
 	return err
 }
@@ -289,6 +330,7 @@ ORDER BY created_at DESC
 
 	for rows.Next() {
 		var b bookmark.Bookmark
+		var lastCheckedAt sql.NullTime
 
 		if err := rows.Scan(
 			&b.ID,
@@ -298,9 +340,13 @@ ORDER BY created_at DESC
 			&b.Status,
 			&b.CreatedAt,
 			&b.UpdatedAt,
-			&b.LastCheckedAt,
+			&lastCheckedAt,
 		); err != nil {
 			return nil, fmt.Errorf("scan bookmark row: %w", err)
+		}
+
+		if lastCheckedAt.Valid {
+			b.LastCheckedAt = &lastCheckedAt.Time
 		}
 
 		tags, err := r.listTagsByBookmarkID(ctx, b.ID)

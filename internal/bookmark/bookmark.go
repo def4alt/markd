@@ -13,3 +13,13 @@ type Bookmark struct {
 	UpdatedAt     time.Time
 	LastCheckedAt *time.Time
 }
+
+type UpdateInput struct {
+	ID            string
+	URL           *string
+	Title         *string
+	Description   *string
+	Status        *string
+	Tags          []string
+	LastCheckedAt *time.Time
+}
