@@ -64,6 +64,15 @@ func (svc *Service) Get(ctx context.Context, id string) (*Bookmark, error) {
 	return b, nil
 }
 
+func (svc *Service) Delete(ctx context.Context, id string) error {
+	err := svc.repo.Delete(ctx, id)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
 func (svc *Service) List(ctx context.Context) ([]Bookmark, error) {
 	b, err := svc.repo.List(ctx)
 	if err != nil {

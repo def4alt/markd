@@ -19,7 +19,7 @@ func NewBookmarkRepository(db *sql.DB) *BookmarkRepository {
 
 func (r *BookmarkRepository) Get(ctx context.Context, id string) (*bookmark.Bookmark, error) {
 	const q = `
-SELECT id, url, title, description, status, created_at, updated_at
+SELECT id, url, title, description, status, created_at, updated_at, last_checked_at
 FROM bookmarks
 WHERE id = ?
 `
@@ -34,6 +34,7 @@ WHERE id = ?
 		&b.Status,
 		&b.CreatedAt,
 		&b.UpdatedAt,
+		&b.LastCheckedAt,
 	)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -55,7 +56,7 @@ WHERE id = ?
 
 func (r *BookmarkRepository) List(ctx context.Context) ([]bookmark.Bookmark, error) {
 	const q = `
-SELECT id, url, title, description, status, created_at, updated_at
+SELECT id, url, title, description, status, created_at, updated_at, last_checked_at
 FROM bookmarks
 ORDER BY created_at DESC
 `
@@ -79,6 +80,7 @@ ORDER BY created_at DESC
 			&b.Status,
 			&b.CreatedAt,
 			&b.UpdatedAt,
+			&b.LastCheckedAt,
 		); err != nil {
 			return nil, fmt.Errorf("scan bookmark row: %w", err)
 		}
@@ -103,7 +105,7 @@ ORDER BY created_at DESC
 func (r *BookmarkRepository) Update(ctx context.Context, b *bookmark.Bookmark) error {
 	const q = `
 UPDATE bookmarks
-SET url = ?, title = ?, description = ?, status = ?, updated_at = ?
+SET url = ?, title = ?, description = ?, status = ?, updated_at = ?, last_checked_at = ?
 WHERE id = ?
 `
 
@@ -116,6 +118,7 @@ WHERE id = ?
 		b.Status,
 		b.UpdatedAt,
 		b.ID,
+		b.LastCheckedAt,
 	)
 	if err != nil {
 		return fmt.Errorf("update bookmark %q: %w", b.ID, err)

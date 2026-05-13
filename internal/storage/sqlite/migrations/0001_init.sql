@@ -6,7 +6,8 @@ CREATE TABLE IF NOT EXISTS bookmarks (
   description TEXT NOT NULL DEFAULT '',
   status TEXT NOT NULL DEFAULT 'unchecked',
   created_at DATETIME NOT NULL,
-  updated_at DATETIME NOT NULL
+  updated_at DATETIME NOT NULL,
+  last_checked_at DATETIME
 );
 
 CREATE TABLE IF NOT EXISTS bookmark_tags (
