@@ -55,6 +55,47 @@ func (svc *Service) Add(ctx context.Context, in AddInput) (*Bookmark, error) {
 	return b, nil
 }
 
+type UpdateInput struct {
+	ID          string
+	URL         string
+	Title       string
+	Description string
+	Tags        []string
+}
+
+func (svc *Service) Update(ctx context.Context, in *UpdateInput) error {
+	now := svc.clock.Now()
+
+	updated, err := svc.repo.Get(ctx, in.ID)
+	if err != nil {
+		return err
+	}
+
+	updated.UpdatedAt = now
+
+	if in.URL != "" {
+		updated.URL = in.URL
+	}
+
+	if in.Description != "" {
+		updated.Description = in.Description
+	}
+
+	if in.Title != "" {
+		updated.Title = in.Title
+	}
+
+	if in.Tags != nil {
+		updated.Tags = in.Tags
+	}
+
+	if err := svc.repo.Update(ctx, updated); err != nil {
+		return err
+	}
+
+	return nil
+}
+
 func (svc *Service) Get(ctx context.Context, id string) (*Bookmark, error) {
 	b, err := svc.repo.Get(ctx, id)
 	if err != nil {
@@ -75,6 +116,15 @@ func (svc *Service) Delete(ctx context.Context, id string) error {
 
 func (svc *Service) List(ctx context.Context) ([]Bookmark, error) {
 	b, err := svc.repo.List(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return b, nil
+}
+
+func (svc *Service) Search(ctx context.Context, query string) ([]Bookmark, error) {
+	b, err := svc.repo.Search(ctx, query)
 	if err != nil {
 		return nil, err
 	}

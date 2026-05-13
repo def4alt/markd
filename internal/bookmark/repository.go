@@ -8,4 +8,5 @@ type Repository interface {
 	List(ctx context.Context) ([]Bookmark, error)
 	Delete(ctx context.Context, id string) error
 	Update(ctx context.Context, b *Bookmark) error
+	Search(ctx context.Context, query string) ([]Bookmark, error)
 }

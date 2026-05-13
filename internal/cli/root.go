@@ -14,6 +14,8 @@ func NewRootCmd(bookmarkSvc *bookmark.Service) *cobra.Command {
 	root.AddCommand(NewAddCmd(bookmarkSvc))
 	root.AddCommand(NewGetCmd(bookmarkSvc))
 	root.AddCommand(NewListCmd(bookmarkSvc))
+	root.AddCommand(NewTagCmd(bookmarkSvc))
+	root.AddCommand(NewSearchCmd(bookmarkSvc))
 
 	return root
 }

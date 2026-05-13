@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/def4alt/markd/internal/bookmark"
 )
@@ -72,6 +73,8 @@ ORDER BY created_at DESC
 	for rows.Next() {
 		var b bookmark.Bookmark
 
+		var lastCheckedAt sql.NullTime
+
 		if err := rows.Scan(
 			&b.ID,
 			&b.URL,
@@ -80,9 +83,13 @@ ORDER BY created_at DESC
 			&b.Status,
 			&b.CreatedAt,
 			&b.UpdatedAt,
-			&b.LastCheckedAt,
+			&lastCheckedAt,
 		); err != nil {
 			return nil, fmt.Errorf("scan bookmark row: %w", err)
+		}
+
+		if lastCheckedAt.Valid {
+			b.LastCheckedAt = &lastCheckedAt.Time
 		}
 
 		tags, err := r.listTagsByBookmarkID(ctx, b.ID)
@@ -109,6 +116,12 @@ SET url = ?, title = ?, description = ?, status = ?, updated_at = ?, last_checke
 WHERE id = ?
 `
 
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin update bookmark %q tx: %w", b.ID, err)
+	}
+	defer tx.Rollback()
+
 	res, err := r.db.ExecContext(
 		ctx,
 		q,
@@ -117,11 +130,35 @@ WHERE id = ?
 		b.Description,
 		b.Status,
 		b.UpdatedAt,
-		b.ID,
 		b.LastCheckedAt,
+		b.ID,
 	)
 	if err != nil {
 		return fmt.Errorf("update bookmark %q: %w", b.ID, err)
+	}
+
+	const tagDeleteQ = `
+		DELETE FROM bookmark_tags
+		WHERE bookmark_id = ?
+	`
+
+	const tagInsertQ = `
+		INSERT INTO bookmark_tags (bookmark_id, tag)
+		VALUES (?, ?)
+	`
+
+	if _, err := tx.ExecContext(ctx, tagDeleteQ, b.ID); err != nil {
+		return fmt.Errorf("delete bookmark tags for %q: %w", b.ID, err)
+	}
+
+	for _, tag := range b.Tags {
+		if _, err := tx.ExecContext(ctx, tagInsertQ, b.ID, tag); err != nil {
+			return fmt.Errorf("insert bookmark tag %q for %q: %w", tag, b.ID, err)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit update bookmark %q: %w", b.ID, err)
 	}
 
 	n, err := res.RowsAffected()
@@ -208,4 +245,77 @@ ORDER BY tag ASC
 	}
 
 	return tags, nil
+}
+
+func escapeLikePattern(s string) string {
+	s = strings.ReplaceAll(s, `\`, `\\`)
+	s = strings.ReplaceAll(s, `%`, `\%`)
+	s = strings.ReplaceAll(s, `_`, `\_`)
+
+	return s
+}
+
+func (r *BookmarkRepository) Search(ctx context.Context, query string) ([]bookmark.Bookmark, error) {
+	if query == "" {
+		return r.List(ctx)
+	}
+
+	const q = `
+SELECT id, url, title, description, status, created_at, updated_at, last_checked_at
+FROM bookmarks
+WHERE
+    url LIKE ? ESCAPE '\'
+    OR title LIKE ? ESCAPE '\'
+    OR description LIKE ? ESCAPE '\'
+    OR EXISTS (
+        SELECT 1
+        FROM bookmark_tags
+        WHERE bookmark_id = bookmarks.id
+          AND tag LIKE ? ESCAPE '\'
+    )
+ORDER BY created_at DESC
+`
+
+	escaped := escapeLikePattern(query)
+	searchQuery := "%" + escaped + "%"
+
+	rows, err := r.db.QueryContext(ctx, q, searchQuery, searchQuery, searchQuery, searchQuery)
+	if err != nil {
+		return nil, fmt.Errorf("search bookmarks: %w", err)
+	}
+	defer rows.Close()
+
+	var out []bookmark.Bookmark
+
+	for rows.Next() {
+		var b bookmark.Bookmark
+
+		if err := rows.Scan(
+			&b.ID,
+			&b.URL,
+			&b.Title,
+			&b.Description,
+			&b.Status,
+			&b.CreatedAt,
+			&b.UpdatedAt,
+			&b.LastCheckedAt,
+		); err != nil {
+			return nil, fmt.Errorf("scan bookmark row: %w", err)
+		}
+
+		tags, err := r.listTagsByBookmarkID(ctx, b.ID)
+		if err != nil {
+			return nil, fmt.Errorf("list tags for bookmark %q: %w", b.ID, err)
+		}
+
+		b.Tags = tags
+
+		out = append(out, b)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate bookmarks: %w", err)
+	}
+
+	return out, nil
 }

@@ -11,5 +11,5 @@ type Bookmark struct {
 	Tags          []string
 	CreatedAt     time.Time
 	UpdatedAt     time.Time
-	LastCheckedAt time.Time
+	LastCheckedAt *time.Time
 }
